@@ -13,10 +13,10 @@ type DumpF func(state any) error
 
 type Ingestor interface {
 	Init() error
-	Start() error
+	Start(sChan chan []byte) error
 	Stop() error
 	// Register(proc []Procedure) error <--- maybe later...
-	Dump() error
+	// Dump() error
 }
 
 // TODO: some more configurations may be needed
@@ -30,9 +30,7 @@ type NATSIngestor struct {
 	StreamName string
 	Subject    string
 
-	// Processing functions
-	DFunc DumpF
-	PFunc Procedure
+	sendChan chan byte
 
 	conn *nats.Conn
 	js   jetstream.JetStream
@@ -49,8 +47,6 @@ func GetNATSIngestor(opts NIOptions) *NATSIngestor {
 		ServerUrl:  opts.ServerUrl,
 		StreamName: opts.StreamName,
 		Subject:    opts.Subject,
-		DFunc:      opts.DFunc,
-		PFunc:      opts.PFunc,
 		ctx:        opts.Ctx,
 	}
 }
@@ -76,14 +72,17 @@ func (n *NATSIngestor) Init() error {
 	return nil
 }
 
-func (n *NATSIngestor) Start() error {
+func (n *NATSIngestor) Start(sChan chan []byte) error {
 	// Start ingesting data from stream
 	cc, _ := n.cons.Consume(func(msg jetstream.Msg) {
 		n.l.Debug("nats", "ingested from", msg.Subject())
+		// Read unitl ctx is stopped
+		select {
+		case <-n.ctx.Done():
+			break
+		default:
+			sChan <- msg.Data()
 
-		err := n.PFunc(n.State, msg.Data())
-		if err != nil {
-			n.l.Error("nats.process", "error", err.Error())
 		}
 	})
 
@@ -98,14 +97,4 @@ func (n NATSIngestor) Stop() error {
 	n.ctx.Done()
 
 	return nil
-}
-
-func (n *NATSIngestor) Dump() error {
-	err := n.DFunc(n.State)
-
-	// This may be a bad idea
-	n.State = nil
-
-	return err
-
 }

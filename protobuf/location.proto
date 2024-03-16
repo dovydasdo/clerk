@@ -1,0 +1,15 @@
+syntax = "proto3";
+package tutorial;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "clerk/generated/location";
+
+message Location {
+  int32 id = 1;
+  google.protobuf.Timestamp create_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  double lat = 5;
+  double lng = 6;
+}
