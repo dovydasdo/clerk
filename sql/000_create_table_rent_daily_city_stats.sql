@@ -9,4 +9,5 @@ CREATE TABLE rent_daily_city_stats (
     city TEXT NULL,
     date DATE NULL,
     ads_count INTEGER NULL
+    source TEXT NULL,
 );

@@ -32,6 +32,9 @@ func TSWithUrl(u string) TSOption {
 
 func TSWithSaveFunc(sf TrsSaveFunc) TSOption {
 	return func(opts *TSOptions) {
+		if opts.SaveFuncs == nil {
+			opts.SaveFuncs = make([]TrsSaveFunc, 0)
+		}
 		opts.SaveFuncs = append(opts.SaveFuncs, sf)
 	}
 }

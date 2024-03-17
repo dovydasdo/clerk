@@ -10,7 +10,7 @@ type NIOption func(*NIOptions)
 type NIOptions struct {
 	ServerUrl  string
 	PFunc      Procedure
-	DFunc      DumpF
+	DFunc      DumpFunc
 	Subject    string
 	StreamName string
 	Logger     *slog.Logger
@@ -41,7 +41,7 @@ func NIWithPFunc(p Procedure) NIOption {
 	}
 }
 
-func NIWithDFunc(d DumpF) NIOption {
+func NIWithDFunc(d DumpFunc) NIOption {
 	return func(n *NIOptions) {
 		n.DFunc = d
 	}

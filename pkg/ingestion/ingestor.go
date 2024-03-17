@@ -9,28 +9,19 @@ import (
 )
 
 type Procedure func(state any, data []byte) error
-type DumpF func(state any) error
 
 type Ingestor interface {
 	Init() error
 	Start(sChan chan []byte) error
 	Stop() error
-	// Register(proc []Procedure) error <--- maybe later...
-	// Dump() error
 }
 
-// TODO: some more configurations may be needed
+// TODO:	some more configurations may be needed
+//		listen to kv store and sync it with db (maybe seperate struct for that)
 type NATSIngestor struct {
-	// State to track stats for all data
-	// To be dumped on Stop() or Dump()
-	State any
-
-	// NATS configuration
 	ServerUrl  string
 	StreamName string
 	Subject    string
-
-	sendChan chan byte
 
 	conn *nats.Conn
 	js   jetstream.JetStream
@@ -38,7 +29,6 @@ type NATSIngestor struct {
 	ctx  context.Context
 	l    *slog.Logger
 
-	// stop functions
 	consStop func()
 }
 
@@ -74,19 +64,22 @@ func (n *NATSIngestor) Init() error {
 
 func (n *NATSIngestor) Start(sChan chan []byte) error {
 	// Start ingesting data from stream
-	cc, _ := n.cons.Consume(func(msg jetstream.Msg) {
-		n.l.Debug("nats", "ingested from", msg.Subject())
-		// Read unitl ctx is stopped
-		select {
-		case <-n.ctx.Done():
-			break
-		default:
-			sChan <- msg.Data()
 
-		}
-	})
+	go func() {
+		cc, _ := n.cons.Consume(func(msg jetstream.Msg) {
+			n.l.Debug("nats", "ingested from", msg.Subject())
+			// Read unitl ctx is stopped
+			select {
+			case <-n.ctx.Done():
+				close(sChan)
+				break
+			default:
+				sChan <- msg.Data()
+			}
+		})
 
-	n.consStop = cc.Stop
+		n.consStop = cc.Stop
+	}()
 
 	return nil
 }

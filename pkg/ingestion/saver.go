@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -48,10 +49,11 @@ func (s TursoSaver) Close() error {
 func (s TursoSaver) Save(data any) error {
 	for _, sf := range s.saveFuncs {
 		err := sf(s.DbConn, data)
-		if err != nil {
-			return err
+		if err == nil {
+			// One save per datatype
+			return nil
 		}
 	}
 
-	return nil
+	return errors.New("save func not found for provided data")
 }

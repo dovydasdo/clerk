@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	pad "github.com/dovydasdo/clerk/generated/ad"
@@ -12,21 +13,30 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type RentStateFunc func(ad *pad.Ad, state any) error
+type DumpFunc func(state any) error
 type Action func(data []byte) error
 
 type Processor interface {
-	Init()
-	Start()
-	Stop()
+	Init() error
+	Start() error
+	Dump() error
+	Stop() error
+}
+
+type cityStats struct {
+	date          time.Time
+	avgPrice      int
+	avgPricePerSq float64
+	avgFootage    float64
+	city          string
+	createdAt     time.Time
+	adsCount      uint
+	source        string
 }
 
 type RentState struct {
-}
-
-type RPOption func(opt *RPOptions)
-type RPOptions struct {
-	Source Ingestor
-	Store  Saver
+	statsCity cityStats
 }
 
 type RentProcessor struct {
@@ -34,84 +44,90 @@ type RentProcessor struct {
 	Ctx     context.Context
 
 	source Ingestor
+	state  any
 	store  Saver
-}
 
-func GetRPOptions(opts ...RPOption) *RPOptions {
-	rpo := &RPOptions{}
-	for _, opt := range opts {
-		opt(rpo)
-	}
+	stateFuncs    []RentStateFunc
+	initStateFunc func(state any)
 
-	return rpo
-}
-
-func RPWithSource(s Ingestor) RPOption {
-	return func(opt *RPOptions) {
-		opt.Source = s
-	}
-}
-
-func RPWithSaver(s Saver) RPOption {
-	return func(opt *RPOptions) {
-		opt.Store = s
-	}
+	l *slog.Logger
 }
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
 	return &RentProcessor{
-		source: opts.Source,
-		store:  opts.Store,
+		source:        opts.Source,
+		store:         opts.Store,
+		l:             opts.Logger,
+		RcvChan:       make(chan []byte),
+		Ctx:           opts.Ctx,
+		initStateFunc: opts.StateInitFunc,
+		stateFuncs:    opts.StateF,
+		state:         opts.State,
 	}
 }
 
 func (p *RentProcessor) Start() error {
+	var err error
+
+	go func() {
+		for {
+			select {
+			case msg := <-p.RcvChan:
+				p.l.Debug("proc", "received", msg)
+				fmt.Printf("received: %v \n", msg)
+				// parse message to rent data type
+				ad := pad.Ad{}
+				if err := proto.Unmarshal(msg, &ad); err != nil {
+					//temp
+					fmt.Printf("failed to unmarshall message")
+					continue
+				}
+
+				// update state with current ad
+				for _, stateF := range p.stateFuncs {
+					err := stateF(&ad, p.state)
+					if err != nil {
+						break
+					}
+				}
+
+				// store the parsed ad
+				// TODO: consider making saving an async action (submit to some to save queue or smthng)
+				err := p.store.Save(&ad)
+				if err != nil {
+					break
+				}
+			case <-p.Ctx.Done():
+				p.source.Stop()
+				break
+			}
+
+		}
+
+	}()
 	p.source.Init()
 	p.source.Start(p.RcvChan)
 
-	for {
-		select {
-		case msg := <-p.RcvChan:
-			ad := pad.Ad{}
-			if err := proto.Unmarshal(msg, &ad); err != nil {
-				//temp
-				fmt.Printf("failed to unmarshall message")
-				continue
-			}
+	p.l.Debug("proc", "message", "starting to listen for messages")
+	fmt.Printf("starting to listen for messages \n")
 
-			// TODO: consider making saving an async action (submit to some to save queue or smthng)
-			err := p.store.Save(&ad)
-			if err != nil {
-				return err
+	return err
 
-			}
-		}
-
-	}
 }
 
-func GetProcedureWithActions(acts []Action) Procedure {
-	return func(state any, data []byte) error {
-		for _, action := range acts {
-			err := action(data)
-			if err != nil {
-				break
-			}
-		}
-
-		return nil
-	}
+func (p *RentProcessor) Stop() error {
+	p.Ctx.Done()
+	return nil
 }
 
-func GetSaveAction(s Saver) Action {
-	return func(data []byte) error {
-
-		s.Save(data)
-		return nil
+func (p RentProcessor) Dump() error {
+	// save state and reset it
+	err := p.store.Save(p.state)
+	if err != nil {
+		return err
 	}
-}
 
-func AdProcessing(state RentState, data []byte) error {
+	p.initStateFunc(p.state)
 	return nil
 }
 
@@ -122,4 +138,19 @@ var SaveAd = func(db *sql.DB, data any) error {
 	}
 
 	return errors.New("failed to parse ad")
+}
+
+var SaveState = func(db *sql.DB, state any) error {
+	// save state
+
+	return nil
+}
+
+var InitSate = func(state any) {
+	// cast state to rent state and make a new instance
+}
+
+var UpdateRentState = func(ad *pad.Ad, state any) error {
+
+	return nil
 }
