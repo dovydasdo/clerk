@@ -57,7 +57,8 @@ type RentProcessor struct {
 	stateFuncs    []RentStateFunc
 	initStateFunc func(state any)
 
-	l *slog.Logger
+	l  *slog.Logger
+	id string
 }
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
@@ -71,6 +72,17 @@ func GetRentProcessor(opts RPOptions) *RentProcessor {
 		state:         opts.State,
 		sources:       opts.Sources,
 	}
+}
+
+func (p RentProcessor) Init() error {
+	for _, s := range p.sources {
+		err := s.Init()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (p *RentProcessor) Start() error {
@@ -134,7 +146,6 @@ func (p *RentProcessor) Start() error {
 	}()
 
 	for _, s := range p.sources {
-		s.Init()
 		s.Start(p.RcvChan)
 	}
 

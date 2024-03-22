@@ -1,0 +1,6 @@
+Collection:
+  Rent:
+    -name: "skelbiu"
+    ads_stream: "rent_ad."
+    kv_name: ""
+
