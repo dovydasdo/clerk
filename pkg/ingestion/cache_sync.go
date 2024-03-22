@@ -8,34 +8,34 @@ import (
 
 // TODO: make this more configurable
 
-type CacheSyncer interface {
-	Start(c chan []byte) error
-	Stop() error
-	Sync() error
-}
-
 type NatsKVSync struct {
 	kv      jetstream.KeyValue
 	ctx     context.Context
 	watcher jetstream.KeyWatcher
 	bName   string
+	name    string
 }
 
-func GenNatsKVSync(kv jetstream.KeyValue, ctx context.Context) *NatsKVSync {
+func GenNatsKVSync(kv jetstream.KeyValue, ctx context.Context, name string) *NatsKVSync {
 	return &NatsKVSync{
-		kv:  kv,
-		ctx: ctx,
+		kv:   kv,
+		ctx:  ctx,
+		name: name,
 	}
 }
 
-func (c NatsKVSync) Start(sChan chan []byte) error {
-	w, _ := c.kv.Watch(c.ctx, c.bName)
+func (c *NatsKVSync) Init() error {
+	w, err := c.kv.Watch(c.ctx, c.bName)
 	c.watcher = w
+	return err
+}
+
+func (c NatsKVSync) Start(sChan chan Message) error {
 	var err error
 	go func() {
 		select {
 		case kvEntry := <-c.watcher.Updates():
-			sChan <- kvEntry.Value()
+			sChan <- Message{source: c.name, data: kvEntry.Value()}
 		case <-c.ctx.Done():
 			return
 		}
@@ -47,9 +47,4 @@ func (c NatsKVSync) Start(sChan chan []byte) error {
 func (c NatsKVSync) Stop() error {
 	c.ctx.Done()
 	return c.watcher.Stop()
-}
-
-func (c NatsKVSync) Sync() error {
-	// TODO: implement manual sync
-	return nil
 }

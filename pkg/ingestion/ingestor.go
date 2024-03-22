@@ -12,7 +12,7 @@ type Procedure func(state any, data []byte) error
 
 type Ingestor interface {
 	Init() error
-	Start(sChan chan []byte) error
+	Start(sChan chan Message) error
 	Stop() error
 }
 
@@ -28,6 +28,7 @@ type NATSIngestor struct {
 	cons jetstream.Consumer
 	ctx  context.Context
 	l    *slog.Logger
+	name string
 
 	consStop func()
 }
@@ -39,6 +40,7 @@ func GetNATSIngestor(opts NIOptions) *NATSIngestor {
 		Subject:    opts.Subject,
 		ctx:        opts.Ctx,
 		l:          opts.Logger,
+		name:       opts.Name,
 	}
 }
 
@@ -63,9 +65,8 @@ func (n *NATSIngestor) Init() error {
 	return nil
 }
 
-func (n *NATSIngestor) Start(sChan chan []byte) error {
+func (n *NATSIngestor) Start(sChan chan Message) error {
 	// Start ingesting data from stream
-
 	go func() {
 		cc, _ := n.cons.Consume(func(msg jetstream.Msg) {
 			n.l.Debug("nats", "ingested from", msg.Subject())
@@ -75,7 +76,7 @@ func (n *NATSIngestor) Start(sChan chan []byte) error {
 				close(sChan)
 				break
 			default:
-				sChan <- msg.Data()
+				sChan <- Message{source: n.name, data: msg.Data()}
 			}
 		})
 

@@ -4,37 +4,52 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/dovydasdo/clerk/generated/ad"
+	"github.com/dovydasdo/clerk/generated/location"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type leveler struct{}
+
+func (l leveler) Level() slog.Level {
+	return -4
+}
+
 var sendData [][]byte
+var sendLocationData [][]byte
 
 type MockIngestor struct {
 	ctx     context.Context
 	cancelF context.CancelFunc
+	data    [][]byte
+	name    string
 }
 
 func (i *MockIngestor) Init() error {
 	return nil
 }
 
-func (i *MockIngestor) Start(sChan chan []byte) error {
-	for _, val := range sendData {
-		select {
-		case <-i.ctx.Done():
-			break
-		default:
-			fmt.Printf("sending: %v \n", val)
-			if sChan == nil {
-				fmt.Printf("no chan \n")
+func (i *MockIngestor) Start(sChan chan Message) error {
+	go func() {
+		for _, val := range i.data {
+			select {
+			case <-i.ctx.Done():
+				break
+			default:
+				fmt.Printf("sending: %v \n", val)
+				if sChan == nil {
+					fmt.Printf("no chan \n")
+				}
+
+				sChan <- Message{source: i.name, data: val}
 			}
-			sChan <- val
 		}
-	}
+	}()
 
 	return nil
 }
@@ -66,11 +81,9 @@ type TestRentState struct {
 }
 
 func TestIngestion(t *testing.T) {
+	logFile := os.Stdout
+	logger := slog.New(slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: leveler{}}))
 	c, cf := context.WithCancel(context.Background())
-	testIngestor = &MockIngestor{
-		ctx:     c,
-		cancelF: cf,
-	}
 
 	var priceTotal int32
 	adsNum := 10
@@ -107,20 +120,58 @@ func TestIngestion(t *testing.T) {
 
 	averagePrice := priceTotal / int32(adsNum)
 
+	locNum := 10
+
+	for i := 0; i < locNum; i++ {
+		testLoc := location.Location{
+			Id:        int32(i),
+			CreateAt:  &timestamppb.Timestamp{},
+			UpdatedAt: &timestamppb.Timestamp{},
+			DeletedAt: &timestamppb.Timestamp{},
+			Lat:       0,
+			Lng:       0,
+		}
+
+		data, _ := proto.Marshal(&testLoc)
+		sendLocationData = append(sendLocationData, data)
+	}
+
+	testIngestor = &MockIngestor{
+		ctx:     c,
+		cancelF: cf,
+		data:    sendData,
+		name:    "ads",
+	}
+
+	testLocIngestor := &MockIngestor{
+		ctx:     c,
+		cancelF: cf,
+		data:    sendLocationData,
+		name:    "locations",
+	}
+
+	fmt.Printf("testLocIngestor: %v\n", testLocIngestor)
+
 	received := 0
+	receivedLoc := 0
 	procOpts := GetRPOptions(
 		RPWithSource(testIngestor),
+		RPWithSource(testLocIngestor),
 		RPWithSaver(MockSaver{
 			saveF: func(data any) {
 				if state, ok := data.(*TestRentState); ok {
 					if state.average != int(averagePrice) {
 						t.Errorf("average incorrect, wanted: %v, got: %v", averagePrice, state.average)
 					}
-
 				}
 
-				if _, ok := data.(*ad.Ad); ok {
+				if ad, ok := data.(*ad.Ad); ok {
+					logger.Debug("test", "message", "saving", "ad", fmt.Sprintf("%v", ad))
 					received++
+				}
+
+				if _, ok := data.(*location.Location); ok {
+					receivedLoc++
 				}
 			},
 		}),
@@ -130,13 +181,15 @@ func TestIngestion(t *testing.T) {
 		}),
 		RPWithStateF(func(ad *ad.Ad, state any) error {
 			if state, ok := state.(*TestRentState); ok {
+				logger.Debug("test", "message", "processing state", "state", fmt.Sprintf("%v", state))
+				logger.Debug("test", "message", "processing state", "ad", fmt.Sprintf("%v", ad))
 				currSum := state.average * state.count
 				state.count++
 				state.average = (currSum + int(ad.Price)) / state.count
 			}
 			return nil
 		}),
-		RPWithLogger(slog.Default()),
+		RPWithLogger(logger),
 		RPWithCtx(context.Background()),
 	)
 
@@ -146,6 +199,9 @@ func TestIngestion(t *testing.T) {
 		t.Errorf("processor failed: %v", err)
 	}
 
+	// TODO: maybe have some drain funcitonality
+	time.Sleep(time.Second)
+
 	err = testProc.Dump()
 	if err != nil {
 		t.Errorf("processor failed at dump: %v", err)
@@ -153,5 +209,9 @@ func TestIngestion(t *testing.T) {
 
 	if received != adsNum {
 		t.Errorf("did not get all ads, wanted: %v, got: %v", adsNum, received)
+	}
+
+	if receivedLoc != locNum {
+		t.Errorf("did not get all locations, wanted: %v, got: %v", locNum, receivedLoc)
 	}
 }

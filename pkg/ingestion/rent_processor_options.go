@@ -7,14 +7,13 @@ import (
 
 type RPOption func(opt *RPOptions)
 type RPOptions struct {
-	Source        Ingestor
+	Sources       []Ingestor
 	Store         Saver
 	Logger        *slog.Logger
 	State         any
 	StateF        []RentStateFunc
 	StateInitFunc func(s any)
 	Ctx           context.Context
-	KVStore       CacheSyncer
 }
 
 func GetRPOptions(opts ...RPOption) *RPOptions {
@@ -28,7 +27,7 @@ func GetRPOptions(opts ...RPOption) *RPOptions {
 
 func RPWithSource(s Ingestor) RPOption {
 	return func(opt *RPOptions) {
-		opt.Source = s
+		opt.Sources = append(opt.Sources, s)
 	}
 }
 
@@ -68,11 +67,5 @@ func RPWithStateInitF(initf func(s any)) RPOption {
 func RPWithCtx(ctx context.Context) RPOption {
 	return func(opt *RPOptions) {
 		opt.Ctx = ctx
-	}
-}
-
-func RPWithKVStore(kv CacheSyncer) RPOption {
-	return func(opt *RPOptions) {
-		opt.KVStore = kv
 	}
 }

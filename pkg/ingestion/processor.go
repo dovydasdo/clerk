@@ -36,17 +36,21 @@ type cityStats struct {
 	source        string
 }
 
+type Message struct {
+	source string
+	data   []byte
+}
+
 type RentState struct {
 	statsCity cityStats
 }
 
 type RentProcessor struct {
-	RcvChan chan []byte
+	RcvChan chan Message
 	Ctx     context.Context
 
 	// TODO: maybe allow any source to be registered?
-	source  Ingestor
-	kvStore CacheSyncer
+	sources []Ingestor
 	state   any
 	store   Saver
 
@@ -58,76 +62,81 @@ type RentProcessor struct {
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
 	return &RentProcessor{
-		source:        opts.Source,
 		store:         opts.Store,
 		l:             opts.Logger,
-		RcvChan:       make(chan []byte),
+		RcvChan:       make(chan Message),
 		Ctx:           opts.Ctx,
 		initStateFunc: opts.StateInitFunc,
 		stateFuncs:    opts.StateF,
 		state:         opts.State,
-		kvStore:       opts.KVStore,
+		sources:       opts.Sources,
 	}
 }
 
 func (p *RentProcessor) Start() error {
 	var err error
 	go func() {
+		p.l.Debug("proc", "message", "starting to listen for messages")
 		for {
 			select {
 			case msg := <-p.RcvChan:
-				p.l.Debug("proc", "received", msg)
-				// parse message to rent data type
-				ad := pad.Ad{}
-				if err := proto.Unmarshal(msg, &pad.Ad{}); err != nil {
-					p.l.Debug("proc", "received", "ad")
-					// update state with current ad
-					for _, stateF := range p.stateFuncs {
-						err := stateF(&ad, p.state)
+				p.l.Debug("proc", "received", "message")
+				switch msg.source {
+				case "ads":
+					// parse message to rent data type
+					ad := pad.Ad{}
+					if err := proto.Unmarshal(msg.data, &ad); err == nil {
+						p.l.Debug("proc", "received", "ad", "val", fmt.Sprintf("%v", &ad))
+						// update state with current ad
+						for _, stateF := range p.stateFuncs {
+							err := stateF(&ad, p.state)
+							if err != nil {
+								break
+							}
+						}
+
+						// store the parsed ad
+						// TODO: consider making saving an async action (submit to some to save queue or smthng)
+						err := p.store.Save(&ad)
 						if err != nil {
 							break
 						}
+
+						continue
 					}
+				case "locations":
+					loc := location.Location{}
+					if err := proto.Unmarshal(msg.data, &loc); err == nil {
+						p.l.Debug("proc", "received", "location")
+						// Sync locaiton data to db
+						err := p.store.Save(&loc)
+						if err != nil {
+							break
+						}
 
-					// store the parsed ad
-					// TODO: consider making saving an async action (submit to some to save queue or smthng)
-					err := p.store.Save(&ad)
-					if err != nil {
-						break
+						continue
+
 					}
-
-					continue
-				}
-
-				loc := location.Location{}
-				if err := proto.Unmarshal(msg, &loc); err != nil {
-					p.l.Debug("proc", "received", "location")
-					// Sync locaiton data to db
-					err := p.store.Save(&ad)
-					if err != nil {
-						break
-					}
-
-					continue
-
+				default:
 				}
 
 				p.l.Warn("proc", "message", "received message that could not be cast to any known type")
+
 			case <-p.Ctx.Done():
-				p.source.Stop()
-				p.kvStore.Stop()
+				for _, s := range p.sources {
+					s.Stop()
+				}
 				break
 			}
 
 		}
 
 	}()
-	p.source.Init()
-	p.source.Start(p.RcvChan)
-	p.kvStore.Start(p.RcvChan)
 
-	p.l.Debug("proc", "message", "starting to listen for messages")
-	fmt.Printf("starting to listen for messages \n")
+	for _, s := range p.sources {
+		s.Init()
+		s.Start(p.RcvChan)
+	}
 
 	return err
 
