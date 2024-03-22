@@ -38,6 +38,7 @@ func GetNATSIngestor(opts NIOptions) *NATSIngestor {
 		StreamName: opts.StreamName,
 		Subject:    opts.Subject,
 		ctx:        opts.Ctx,
+		l:          opts.Logger,
 	}
 }
 

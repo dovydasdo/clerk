@@ -14,6 +14,7 @@ type RPOptions struct {
 	StateF        []RentStateFunc
 	StateInitFunc func(s any)
 	Ctx           context.Context
+	KVStore       CacheSyncer
 }
 
 func GetRPOptions(opts ...RPOption) *RPOptions {
@@ -63,8 +64,15 @@ func RPWithStateInitF(initf func(s any)) RPOption {
 		opt.StateInitFunc = initf
 	}
 }
+
 func RPWithCtx(ctx context.Context) RPOption {
 	return func(opt *RPOptions) {
 		opt.Ctx = ctx
+	}
+}
+
+func RPWithKVStore(kv CacheSyncer) RPOption {
+	return func(opt *RPOptions) {
+		opt.KVStore = kv
 	}
 }

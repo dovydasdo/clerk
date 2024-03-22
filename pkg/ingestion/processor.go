@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pad "github.com/dovydasdo/clerk/generated/ad"
+	"github.com/dovydasdo/clerk/generated/location"
 	queries "github.com/dovydasdo/clerk/sql"
 	"google.golang.org/protobuf/proto"
 )
@@ -43,9 +44,11 @@ type RentProcessor struct {
 	RcvChan chan []byte
 	Ctx     context.Context
 
-	source Ingestor
-	state  any
-	store  Saver
+	// TODO: maybe allow any source to be registered?
+	source  Ingestor
+	kvStore CacheSyncer
+	state   any
+	store   Saver
 
 	stateFuncs    []RentStateFunc
 	initStateFunc func(state any)
@@ -63,42 +66,56 @@ func GetRentProcessor(opts RPOptions) *RentProcessor {
 		initStateFunc: opts.StateInitFunc,
 		stateFuncs:    opts.StateF,
 		state:         opts.State,
+		kvStore:       opts.KVStore,
 	}
 }
 
 func (p *RentProcessor) Start() error {
 	var err error
-
 	go func() {
 		for {
 			select {
 			case msg := <-p.RcvChan:
 				p.l.Debug("proc", "received", msg)
-				fmt.Printf("received: %v \n", msg)
 				// parse message to rent data type
 				ad := pad.Ad{}
-				if err := proto.Unmarshal(msg, &ad); err != nil {
-					//temp
-					fmt.Printf("failed to unmarshall message")
-					continue
-				}
+				if err := proto.Unmarshal(msg, &pad.Ad{}); err != nil {
+					p.l.Debug("proc", "received", "ad")
+					// update state with current ad
+					for _, stateF := range p.stateFuncs {
+						err := stateF(&ad, p.state)
+						if err != nil {
+							break
+						}
+					}
 
-				// update state with current ad
-				for _, stateF := range p.stateFuncs {
-					err := stateF(&ad, p.state)
+					// store the parsed ad
+					// TODO: consider making saving an async action (submit to some to save queue or smthng)
+					err := p.store.Save(&ad)
 					if err != nil {
 						break
 					}
+
+					continue
 				}
 
-				// store the parsed ad
-				// TODO: consider making saving an async action (submit to some to save queue or smthng)
-				err := p.store.Save(&ad)
-				if err != nil {
-					break
+				loc := location.Location{}
+				if err := proto.Unmarshal(msg, &loc); err != nil {
+					p.l.Debug("proc", "received", "location")
+					// Sync locaiton data to db
+					err := p.store.Save(&ad)
+					if err != nil {
+						break
+					}
+
+					continue
+
 				}
+
+				p.l.Warn("proc", "message", "received message that could not be cast to any known type")
 			case <-p.Ctx.Done():
 				p.source.Stop()
+				p.kvStore.Stop()
 				break
 			}
 
@@ -107,6 +124,7 @@ func (p *RentProcessor) Start() error {
 	}()
 	p.source.Init()
 	p.source.Start(p.RcvChan)
+	p.kvStore.Start(p.RcvChan)
 
 	p.l.Debug("proc", "message", "starting to listen for messages")
 	fmt.Printf("starting to listen for messages \n")
@@ -136,8 +154,15 @@ var SaveAd = func(db *sql.DB, data any) error {
 		_, err := db.Exec(queries.SaveAd, time.Now(), time.Now(), ad.City, ad.Date, ad.Stars, ad.Title, ad.Address, ad.Footage, ad.Rooms, ad.Floor, ad.Specifications, ad.Price, ad.Premium, ad.AdId, ad.Source, ad.Url, ad.BuildingFloors, ad.AdIdUi)
 		return err
 	}
-
 	return errors.New("failed to parse ad")
+}
+
+var SaveLocation = func(db *sql.DB, data any) error {
+	if loc, ok := data.(*location.Location); ok {
+		_, err := db.Exec(queries.SaveLocation, loc.Id, time.Now(), time.Now(), loc.Lat, loc.Lng)
+		return err
+	}
+	return errors.New("failed to parse location")
 }
 
 var SaveState = func(db *sql.DB, state any) error {
@@ -151,6 +176,5 @@ var InitSate = func(state any) {
 }
 
 var UpdateRentState = func(ad *pad.Ad, state any) error {
-
 	return nil
 }

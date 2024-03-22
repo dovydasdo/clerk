@@ -16,6 +16,7 @@ type NIOptions struct {
 	Logger     *slog.Logger
 	Ctx        context.Context
 	State      any
+	KVName     string
 }
 
 func GetNIOptions(opts ...NIOption) *NIOptions {
@@ -74,5 +75,11 @@ func NIWithCtx(ctx context.Context) NIOption {
 func NIWithState(state any) NIOption {
 	return func(n *NIOptions) {
 		n.State = state
+	}
+}
+
+func NIWithSyncer(s string) NIOption {
+	return func(n *NIOptions) {
+		n.KVName = s
 	}
 }
