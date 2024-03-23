@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dovydasdo/clerk/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -13,9 +14,25 @@ var rootCmd = &cobra.Command{
 	Short: "PSEC data queue manager",
 	Long:  `clerk is a cli tool used to process and save data gathered by PSEC scrapers`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("from Run")
-		val := viper.Get("collection")
-		fmt.Printf("found in cfg: %v \n", val)
+		col := config.Collection{}
+		err := viper.UnmarshalKey("collection", &col)
+		if err != nil {
+			panic("failed to unmarshall config")
+		}
+
+		if len(col.DataSources) < 1 {
+			panic("no souces provided in config")
+		}
+
+		// init logger
+
+		for _, src := range col.DataSources {
+			switch src.Type {
+			case "rent":
+			default:
+
+			}
+		}
 	},
 }
 
@@ -28,7 +45,8 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().StringP("log_level", "l", "info", "Log level (debug, info, error)")
+	viper.BindPFlag("log_level", rootCmd.PersistentFlags().Lookup("log_level"))
 }
 
 func initConfig() {

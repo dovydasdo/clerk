@@ -1,6 +1,14 @@
-Collection:
-  Rent:
-    -name: "skelbiu"
-    ads_stream: "rent_ad."
-    kv_name: ""
-test: cool beans
+collection:
+  data_sources:
+    - name: skelbiu_ads
+      stream: rent_ad.skelbiu.>
+      kv_name: locations
+      store: turso
+      type: rent
+      dump: daily
+    # - name: aruodas_ads
+    #   stream: rent_ad.aruodas.>
+    #   kv_name: locations
+    #   store: turso
+    #   type: rent
+    #   dump: daily
