@@ -1,11 +1,21 @@
 collection:
-  data_sources:
-    - name: skelbiu_ads
-      stream: rent_ad.skelbiu.>
-      kv_name: locations
-      store: turso
-      type: rent
-      dump: daily
+  managers:
+    - type: rent
+      data_sources:
+        - name: skelbiu_ads
+          stream: rent_ad.skelbiu.>
+          kv_name: locations
+          store: turso
+          type: rent
+          dump: daily
+    - type: cars
+      data_sources:
+        - name: skelbiu_ads
+          stream: rent_ad.skelbiu.>
+          kv_name: locations
+          store: turso
+          type: rent
+          dump: daily
     # - name: aruodas_ads
     #   stream: rent_ad.aruodas.>
     #   kv_name: locations
