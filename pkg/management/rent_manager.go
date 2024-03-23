@@ -1,31 +1,50 @@
 package management
 
 import (
+	"context"
+	"log/slog"
+
 	i "github.com/dovydasdo/clerk/pkg/ingestion"
 )
 
-// Contains all of the processors for rent data sites
+// Starts and manages processors
 type RentManager struct {
 	Processors []i.Processor
+	ctx        context.Context
+	l          *slog.Logger
 }
 
-func GetRentManager() *RentManager {
+func GetRentManager(opts RMOptions) *RentManager {
 	rm := &RentManager{
-		Processors: make([]i.Processor, 0),
+		Processors: opts.Processors,
+		ctx:        opts.Ctx,
+		l:          opts.Logger,
 	}
 
-	processorOpts := i.GetRPOptions()
-	processor := i.GetRentProcessor(*processorOpts)
-
-	rm.Processors = append(rm.Processors, processor)
 	return rm
 }
 
 func (rm RentManager) Init() error {
+	for _, p := range rm.Processors {
+		err := p.Init()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (rm RentManager) Start() error {
+	for _, p := range rm.Processors {
+		err := p.Start()
+		if err != nil {
+			return err
+		}
+	}
+
+	// TODO: have so loop to check for changes in config/some state api
+
 	return nil
 }
 

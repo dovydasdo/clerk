@@ -5,24 +5,20 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "clerk",
-	Short: "PSEC data consumer",
-	Long: `TODO: A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "PSEC data queue manager",
+	Long:  `clerk is a cli tool used to process and save data gathered by PSEC scrapers`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("from Run")
+		val := viper.Get("collection")
+		fmt.Printf("found in cfg: %v \n", val)
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -31,13 +27,29 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.clerk.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
+	cobra.OnInitialize(initConfig)
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+func initConfig() {
+	// For specifying where goes what and when
+	viper.SetConfigType("yaml")
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
+
+	viper.BindEnv("DB_HOST")
+	viper.BindEnv("DB_PORT")
+	viper.BindEnv("DB_USER")
+	viper.BindEnv("DB_PASS")
+	viper.BindEnv("DB_NAME")
+	viper.BindEnv("DB_DEBUG")
+	viper.BindEnv("NATS_CREDS")
+	viper.BindEnv("NATS_SERVER")
+	viper.BindEnv("TURSO_URL")
+	viper.BindEnv("TURSO_TOKEN")
+
+	if err := viper.ReadInConfig(); err != nil {
+		fmt.Println("Can't read config:", err)
+		os.Exit(1)
+	}
 }
