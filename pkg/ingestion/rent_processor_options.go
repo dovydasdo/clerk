@@ -14,6 +14,7 @@ type RPOptions struct {
 	StateF        []RentStateFunc
 	StateInitFunc func(s any)
 	Ctx           context.Context
+	Id            string
 }
 
 func GetRPOptions(opts ...RPOption) *RPOptions {
@@ -25,9 +26,9 @@ func GetRPOptions(opts ...RPOption) *RPOptions {
 	return rpo
 }
 
-func RPWithSource(s Ingestor) RPOption {
+func RPWithSource(s ...Ingestor) RPOption {
 	return func(opt *RPOptions) {
-		opt.Sources = append(opt.Sources, s)
+		opt.Sources = append(opt.Sources, s...)
 	}
 }
 
@@ -67,5 +68,11 @@ func RPWithStateInitF(initf func(s any)) RPOption {
 func RPWithCtx(ctx context.Context) RPOption {
 	return func(opt *RPOptions) {
 		opt.Ctx = ctx
+	}
+}
+
+func RPWithId(id string) RPOption {
+	return func(opt *RPOptions) {
+		opt.Id = id
 	}
 }

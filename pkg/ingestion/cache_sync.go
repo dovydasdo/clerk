@@ -3,34 +3,55 @@ package ingestion
 import (
 	"context"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
 // TODO: make this more configurable
 
 type NatsKVSync struct {
-	kv      jetstream.KeyValue
+	nc *nats.Conn
+	kv jetstream.KeyValue
+
 	ctx     context.Context
 	watcher jetstream.KeyWatcher
 	bName   string
 	name    string
+	url     string
 }
 
-func GenNatsKVSync(kv jetstream.KeyValue, ctx context.Context, name string) *NatsKVSync {
+func GetNatsKVSync(options *NKVCacheOptions) *NatsKVSync {
 	return &NatsKVSync{
-		kv:   kv,
-		ctx:  ctx,
-		name: name,
+		ctx:  options.Ctx,
+		name: options.Name,
+		url:  options.Url,
 	}
 }
 
 func (c *NatsKVSync) Init() error {
+	nc, err := nats.Connect(c.url)
+	if err != nil {
+		return err
+	}
+	c.nc = nc
+
+	js, _ := jetstream.New(nc)
+	kv, err := js.CreateOrUpdateKeyValue(c.ctx, jetstream.KeyValueConfig{
+		Bucket: c.name,
+	})
+	if err != nil {
+
+		return err
+	}
+
+	c.kv = kv
+
 	w, err := c.kv.Watch(c.ctx, c.bName)
 	c.watcher = w
 	return err
 }
 
-func (c NatsKVSync) Start(sChan chan Message) error {
+func (c *NatsKVSync) Start(sChan chan Message) error {
 	var err error
 	go func() {
 		select {
@@ -44,7 +65,8 @@ func (c NatsKVSync) Start(sChan chan Message) error {
 	return err
 }
 
-func (c NatsKVSync) Stop() error {
+func (c *NatsKVSync) Stop() error {
 	c.ctx.Done()
+	c.nc.Drain()
 	return c.watcher.Stop()
 }

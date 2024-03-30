@@ -1,6 +1,6 @@
 package config
 
 type Manager struct {
-	Type        string       `yaml:"type"`
-	DataSources []DataSource `yaml:"data_sources"`
+	Type       string      `mapstructure:"type"`
+	Processors []Processor `mapstructure:"processors"`
 }

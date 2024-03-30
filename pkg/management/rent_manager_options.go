@@ -23,9 +23,9 @@ func GetRMOptions(setters ...RMOption) *RMOptions {
 	return options
 }
 
-func RMWithProcessor(p ingestion.Processor) RMOption {
+func RMWithProcessor(p ...ingestion.Processor) RMOption {
 	return func(opts *RMOptions) {
-		opts.Processors = append(opts.Processors, p)
+		opts.Processors = append(opts.Processors, p...)
 	}
 }
 

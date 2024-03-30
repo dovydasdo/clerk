@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/dovydasdo/clerk/config"
+	"github.com/dovydasdo/clerk/pkg/collection"
 	"github.com/sagikazarmark/slog-shim"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -15,13 +17,13 @@ var rootCmd = &cobra.Command{
 	Short: "PSEC data ingestion manager",
 	Long:  `clerk is a cli tool used to process and save data gathered by PSEC scrapers`,
 	Run: func(cmd *cobra.Command, args []string) {
-		col := config.Collection{}
-		err := viper.UnmarshalKey("collection", &col)
+		colConf := config.CollectionConfig{}
+		err := viper.UnmarshalKey("collection", &colConf)
 		if err != nil {
 			panic("failed to unmarshall config")
 		}
 
-		if len(col.Managers) < 1 {
+		if len(colConf.Managers) < 1 {
 			panic("no souces provided in config")
 		}
 
@@ -45,13 +47,12 @@ var rootCmd = &cobra.Command{
 		handler := slog.NewJSONHandler(os.Stdout, opts)
 		logger := slog.New(handler)
 
-		for _, src := range col.Managers {
-			switch src.Type {
-			case "rent":
-				logger.Info("init", "message", fmt.Sprintf("starting manager of type %+v", src.Type))
-			default:
-				logger.Warn("init", "message", fmt.Sprintf("source of type %v not implemented", src.Type))
-			}
+		col := collection.GetCollection(context.Background(), colConf, logger)
+
+		err = col.Start()
+		if err != nil {
+			logger.Error("start", "error", err)
+
 		}
 	},
 }
@@ -65,6 +66,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+	cobra.OnFinalize()
 	rootCmd.PersistentFlags().StringP("log_level", "l", "info", "Log level (debug, info, error)")
 	viper.BindPFlag("log_level", rootCmd.PersistentFlags().Lookup("log_level"))
 }
