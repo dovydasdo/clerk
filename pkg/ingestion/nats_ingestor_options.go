@@ -9,21 +9,15 @@ type NIOption func(*NIOptions)
 
 type NIOptions struct {
 	ServerUrl  string
-	PFunc      Procedure
-	DFunc      DumpFunc
 	Subject    string
 	StreamName string
 	Logger     *slog.Logger
 	Ctx        context.Context
-	State      any
 	Name       string
 }
 
 func GetNIOptions(opts ...NIOption) *NIOptions {
-	ni := &NIOptions{
-		Ctx:   context.Background(),
-		State: make(map[string]int),
-	}
+	ni := &NIOptions{}
 	for _, opt := range opts {
 		opt(ni)
 	}
@@ -33,18 +27,6 @@ func GetNIOptions(opts ...NIOption) *NIOptions {
 func NIWithServerUrl(url string) NIOption {
 	return func(n *NIOptions) {
 		n.ServerUrl = url
-	}
-}
-
-func NIWithPFunc(p Procedure) NIOption {
-	return func(n *NIOptions) {
-		n.PFunc = p
-	}
-}
-
-func NIWithDFunc(d DumpFunc) NIOption {
-	return func(n *NIOptions) {
-		n.DFunc = d
 	}
 }
 
@@ -69,12 +51,6 @@ func NIWithLogger(l *slog.Logger) NIOption {
 func NIWithCtx(ctx context.Context) NIOption {
 	return func(n *NIOptions) {
 		n.Ctx = ctx
-	}
-}
-
-func NIWithState(state any) NIOption {
-	return func(n *NIOptions) {
-		n.State = state
 	}
 }
 

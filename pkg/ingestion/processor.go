@@ -15,7 +15,6 @@ import (
 )
 
 type RentStateFunc func(ad *pad.Ad, state any) error
-type DumpFunc func(state any) error
 type Action func(data []byte) error
 
 type Processor interface {
@@ -57,7 +56,8 @@ type RentProcessor struct {
 	stateFuncs    []RentStateFunc
 	initStateFunc func(state any)
 
-	l *slog.Logger
+	l  *slog.Logger
+	id string
 }
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
@@ -73,16 +73,29 @@ func GetRentProcessor(opts RPOptions) *RentProcessor {
 	}
 }
 
+func (p RentProcessor) Init() error {
+	for _, s := range p.sources {
+		p.l.Debug("processor", "message", fmt.Sprintf("init: %+v", s))
+		err := s.Init()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (p *RentProcessor) Start() error {
+	p.l.Debug("proc", "message", "starting rent processor")
 	var err error
 	go func() {
 		p.l.Debug("proc", "message", "starting to listen for messages")
 		for {
 			select {
 			case msg := <-p.RcvChan:
-				p.l.Debug("proc", "received", "message")
+				p.l.Debug("proc", "received", "message", "rource", msg.source)
 				switch msg.source {
-				case "ads":
+				case "rent_ads":
 					// parse message to rent data type
 					ad := pad.Ad{}
 					if err := proto.Unmarshal(msg.data, &ad); err == nil {
@@ -99,6 +112,7 @@ func (p *RentProcessor) Start() error {
 						// TODO: consider making saving an async action (submit to some to save queue or smthng)
 						err := p.store.Save(&ad)
 						if err != nil {
+							p.l.Error("proc", "error", err)
 							break
 						}
 
@@ -134,7 +148,6 @@ func (p *RentProcessor) Start() error {
 	}()
 
 	for _, s := range p.sources {
-		s.Init()
 		s.Start(p.RcvChan)
 	}
 
@@ -158,15 +171,25 @@ func (p RentProcessor) Dump() error {
 	return nil
 }
 
-var SaveAd = func(db *sql.DB, data any) error {
+var SaveAd = func(db *sql.DB, data any, l *slog.Logger) error {
 	if ad, ok := data.(*pad.Ad); ok {
-		_, err := db.Exec(queries.SaveAd, time.Now(), time.Now(), ad.City, ad.Date, ad.Stars, ad.Title, ad.Address, ad.Footage, ad.Rooms, ad.Floor, ad.Specifications, ad.Price, ad.Premium, ad.AdId, ad.Source, ad.Url, ad.BuildingFloors, ad.AdIdUi)
+		l.Debug("saver", "message", "saving ad")
+		res, err := db.Exec(queries.SaveAd, time.Now(), time.Now(), ad.City, ad.Date.AsTime(), ad.Stars, ad.Title, ad.Address, ad.Footage, ad.Rooms, ad.Floor, ad.Specifications, ad.Price, ad.Premium, ad.AdId, ad.Source, ad.Url, ad.BuildingFloors, ad.AdIdUi)
+		if res == nil {
+			return SaveError{Message: "got nil result from db exec", InnerErr: err}
+		}
+		rows, err := res.RowsAffected()
+		if err != nil {
+			return SaveError{Message: "no rows affected", InnerErr: err}
+		}
+
+		l.Debug("saver", "message", fmt.Sprintf("rows affected: %v", rows))
 		return err
 	}
 	return errors.New("failed to parse ad")
 }
 
-var SaveLocation = func(db *sql.DB, data any) error {
+var SaveLocation = func(db *sql.DB, data any, l *slog.Logger) error {
 	if loc, ok := data.(*location.Location); ok {
 		_, err := db.Exec(queries.SaveLocation, loc.Id, time.Now(), time.Now(), loc.Lat, loc.Lng)
 		return err
@@ -174,14 +197,14 @@ var SaveLocation = func(db *sql.DB, data any) error {
 	return errors.New("failed to parse location")
 }
 
-var SaveState = func(db *sql.DB, state any) error {
+var SaveState = func(db *sql.DB, state any, l *slog.Logger) error {
 	// save state
 
 	return nil
 }
 
 var InitSate = func(state any) {
-	// cast state to rent state and make a new instance
+	state = &RentState{}
 }
 
 var UpdateRentState = func(ad *pad.Ad, state any) error {

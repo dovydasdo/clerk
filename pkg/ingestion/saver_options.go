@@ -1,11 +1,14 @@
 package ingestion
 
+import "log/slog"
+
 type TSOption func(opts *TSOptions)
 
 type TSOptions struct {
 	Token     string
 	Url       string
 	SaveFuncs []TrsSaveFunc
+	Logger    *slog.Logger
 }
 
 func GetTSOptions(setters ...TSOption) TSOptions {
@@ -27,6 +30,12 @@ func TSWithToken(t string) TSOption {
 func TSWithUrl(u string) TSOption {
 	return func(opts *TSOptions) {
 		opts.Url = u
+	}
+}
+
+func TSWithLogger(l *slog.Logger) TSOption {
+	return func(opts *TSOptions) {
+		opts.Logger = l
 	}
 }
 
