@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	pad "github.com/dovydasdo/clerk/generated/ad"
@@ -51,7 +52,7 @@ type RentProcessor struct {
 
 	// TODO: maybe allow any source to be registered?
 	sources []Ingestor
-	state   any
+	state   *RentState
 	store   Saver
 
 	stateFuncs    []RentStateFunc
@@ -65,6 +66,15 @@ type RentProcessor struct {
 }
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
+	// TODO: fix this, fails to cast to rent sate if is any
+	state, ok := opts.State.(*RentState)
+	if !ok {
+		state = &RentState{
+			statsCity:      map[string]*cityStats{},
+			totalProcessed: 0,
+		}
+	}
+
 	return &RentProcessor{
 		store:         opts.Store,
 		l:             opts.Logger,
@@ -72,7 +82,7 @@ func GetRentProcessor(opts RPOptions) *RentProcessor {
 		Ctx:           opts.Ctx,
 		initStateFunc: opts.StateInitFunc,
 		stateFuncs:    opts.StateF,
-		state:         opts.State,
+		state:         state,
 		sources:       opts.Sources,
 		dumpInterval:  opts.DumpInterval,
 		s:             opts.Scheduler,
@@ -87,6 +97,8 @@ func (p RentProcessor) Init() error {
 			return err
 		}
 	}
+
+	p.initStateFunc(p.state)
 
 	return nil
 }
@@ -164,7 +176,7 @@ func (p *RentProcessor) Start() error {
 			switch p.dumpInterval {
 			case "daily":
 				// End of day dump
-				def = gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(23, 59, 59)))
+				def = gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(14, 15, 59)))
 			case "weekly":
 				// End of week dump
 				def = gocron.WeeklyJob(1, gocron.NewWeekdays(time.Sunday), gocron.NewAtTimes(gocron.NewAtTime(23, 59, 59)))
@@ -173,13 +185,16 @@ func (p *RentProcessor) Start() error {
 			job, err := p.s.NewJob(
 				def,
 				gocron.NewTask(
-					func() { p.Dump() },
+					func() {
+						p.l.Info("scheduler", "message", fmt.Sprintf("dumping state for: %v", p.id))
+						p.Dump()
+					},
 				),
 			)
 			if err != nil {
 				p.l.Info("proc", "err", err)
 			}
-			p.l.Info("proc", "message", fmt.Sprintf("started job: %v", job.ID()))
+			p.l.Info("proc", "message", fmt.Sprintf("started dump job: %v", job.ID()))
 			p.s.Start()
 		}()
 	}
@@ -234,6 +249,7 @@ var SaveLocation = func(db *sql.DB, data any, l *slog.Logger) error {
 }
 
 var SaveRentState = func(db *sql.DB, state any, l *slog.Logger) error {
+	l.Info("saver", "message", "saving state")
 	if st, ok := state.(*RentState); ok {
 		l.Info("saver", "message", fmt.Sprintf("dumping state, processed ads: %v", st.totalProcessed))
 		valueStrings := make([]string, 0, len(st.statsCity))
@@ -249,9 +265,14 @@ var SaveRentState = func(db *sql.DB, state any, l *slog.Logger) error {
 			valueArgs = append(valueArgs, city.adsCount)
 		}
 
-		_, err := db.Exec(queries.SaveRentState, valueArgs...)
-		return err
+		_, err := db.Exec(fmt.Sprintf(queries.SaveRentState, strings.Join(valueStrings, ",")), valueArgs...)
+		if err != nil {
+			return SaveError{Message: "failed to save rent sate", InnerErr: err}
+		}
+
+		return nil
 	}
+
 	return errors.New("failed to parse rent state")
 }
 
