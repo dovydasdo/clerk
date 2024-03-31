@@ -140,7 +140,7 @@ func TestIngestion(t *testing.T) {
 		ctx:     c,
 		cancelF: cf,
 		data:    sendData,
-		name:    "ads",
+		name:    "rent_ads",
 	}
 
 	testLocIngestor := &MockIngestor{
