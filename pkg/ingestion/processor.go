@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	pad "github.com/dovydasdo/clerk/generated/ad"
 	"github.com/dovydasdo/clerk/generated/location"
 	queries "github.com/dovydasdo/clerk/sql"
+	"github.com/go-co-op/gocron/v2"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,7 +32,6 @@ type cityStats struct {
 	avgPricePerSq float64
 	avgFootage    float64
 	city          string
-	createdAt     time.Time
 	adsCount      uint
 	source        string
 }
@@ -41,7 +42,8 @@ type Message struct {
 }
 
 type RentState struct {
-	statsCity cityStats
+	statsCity      map[string]*cityStats
+	totalProcessed int
 }
 
 type RentProcessor struct {
@@ -50,17 +52,29 @@ type RentProcessor struct {
 
 	// TODO: maybe allow any source to be registered?
 	sources []Ingestor
-	state   any
+	state   *RentState
 	store   Saver
 
 	stateFuncs    []RentStateFunc
 	initStateFunc func(state any)
 
-	l  *slog.Logger
-	id string
+	l *slog.Logger
+	s gocron.Scheduler
+
+	id           string
+	dumpInterval string
 }
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
+	// TODO: fix this, fails to cast to rent sate if is any
+	state, ok := opts.State.(*RentState)
+	if !ok {
+		state = &RentState{
+			statsCity:      map[string]*cityStats{},
+			totalProcessed: 0,
+		}
+	}
+
 	return &RentProcessor{
 		store:         opts.Store,
 		l:             opts.Logger,
@@ -68,8 +82,10 @@ func GetRentProcessor(opts RPOptions) *RentProcessor {
 		Ctx:           opts.Ctx,
 		initStateFunc: opts.StateInitFunc,
 		stateFuncs:    opts.StateF,
-		state:         opts.State,
+		state:         state,
 		sources:       opts.Sources,
+		dumpInterval:  opts.DumpInterval,
+		s:             opts.Scheduler,
 	}
 }
 
@@ -81,6 +97,8 @@ func (p RentProcessor) Init() error {
 			return err
 		}
 	}
+
+	p.initStateFunc(p.state)
 
 	return nil
 }
@@ -151,12 +169,45 @@ func (p *RentProcessor) Start() error {
 		s.Start(p.RcvChan)
 	}
 
+	// TODO: add cron job for dumping sate
+	if p.s != nil {
+		go func() {
+			var def gocron.JobDefinition
+			switch p.dumpInterval {
+			case "daily":
+				// End of day dump
+				def = gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(14, 15, 59)))
+			case "weekly":
+				// End of week dump
+				def = gocron.WeeklyJob(1, gocron.NewWeekdays(time.Sunday), gocron.NewAtTimes(gocron.NewAtTime(23, 59, 59)))
+			}
+
+			job, err := p.s.NewJob(
+				def,
+				gocron.NewTask(
+					func() {
+						p.l.Info("scheduler", "message", fmt.Sprintf("dumping state for: %v", p.id))
+						p.Dump()
+					},
+				),
+			)
+			if err != nil {
+				p.l.Info("proc", "err", err)
+			}
+			p.l.Info("proc", "message", fmt.Sprintf("started dump job: %v", job.ID()))
+			p.s.Start()
+		}()
+	}
+
 	return err
 
 }
 
 func (p *RentProcessor) Stop() error {
 	p.Ctx.Done()
+	if p.s != nil {
+		p.s.Shutdown()
+	}
 	return nil
 }
 
@@ -197,16 +248,75 @@ var SaveLocation = func(db *sql.DB, data any, l *slog.Logger) error {
 	return errors.New("failed to parse location")
 }
 
-var SaveState = func(db *sql.DB, state any, l *slog.Logger) error {
-	// save state
+var SaveRentState = func(db *sql.DB, state any, l *slog.Logger) error {
+	l.Info("saver", "message", "saving state")
+	if st, ok := state.(*RentState); ok {
+		l.Info("saver", "message", fmt.Sprintf("dumping state, processed ads: %v", st.totalProcessed))
+		valueStrings := make([]string, 0, len(st.statsCity))
+		valueArgs := make([]interface{}, 0, len(st.statsCity)*7)
+		for _, city := range st.statsCity {
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?)")
+			valueArgs = append(valueArgs, time.Now())
+			valueArgs = append(valueArgs, city.avgPrice)
+			valueArgs = append(valueArgs, city.avgPricePerSq)
+			valueArgs = append(valueArgs, city.avgFootage)
+			valueArgs = append(valueArgs, city.city)
+			valueArgs = append(valueArgs, city.date)
+			valueArgs = append(valueArgs, city.adsCount)
+		}
 
-	return nil
+		_, err := db.Exec(fmt.Sprintf(queries.SaveRentState, strings.Join(valueStrings, ",")), valueArgs...)
+		if err != nil {
+			return SaveError{Message: "failed to save rent sate", InnerErr: err}
+		}
+
+		return nil
+	}
+
+	return errors.New("failed to parse rent state")
 }
 
 var InitSate = func(state any) {
-	state = &RentState{}
+	state = &RentState{
+		statsCity:      make(map[string]*cityStats),
+		totalProcessed: 0,
+	}
 }
 
 var UpdateRentState = func(ad *pad.Ad, state any) error {
+	rState, ok := state.(*RentState)
+	if !ok {
+		return errors.New("failed to cast to rent state")
+	}
+
+	cStats, ok := rState.statsCity[ad.City]
+	if !ok {
+		date := time.Now()
+		date = time.Date(
+			date.Year(), date.Month(), date.Day(),
+			0, 0, 0, 0, date.Location(),
+		)
+
+		cs := cityStats{
+			date:          date,
+			avgPrice:      int(ad.Price),
+			avgPricePerSq: float64(ad.Price) / ad.Footage,
+			avgFootage:    ad.Footage,
+			city:          ad.City,
+			adsCount:      1,
+			source:        ad.Source,
+		}
+
+		rState.statsCity[ad.City] = &cs
+		rState.totalProcessed++
+		return nil
+	}
+
+	// This might be dumb
+	cStats.avgPrice = (cStats.avgPrice*int(cStats.adsCount) + int(ad.Price)) / int(cStats.adsCount+1)
+	cStats.avgFootage = (cStats.avgFootage*float64(cStats.adsCount) + float64(ad.Footage)) / float64(cStats.adsCount+1)
+	cStats.avgPricePerSq = float64(cStats.avgPrice) / cStats.avgFootage
+	cStats.adsCount++
+	rState.totalProcessed++
 	return nil
 }

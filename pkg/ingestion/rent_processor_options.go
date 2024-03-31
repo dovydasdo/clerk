@@ -3,6 +3,8 @@ package ingestion
 import (
 	"context"
 	"log/slog"
+
+	"github.com/go-co-op/gocron/v2"
 )
 
 type RPOption func(opt *RPOptions)
@@ -15,6 +17,8 @@ type RPOptions struct {
 	StateInitFunc func(s any)
 	Ctx           context.Context
 	Id            string
+	DumpInterval  string
+	Scheduler     gocron.Scheduler
 }
 
 func GetRPOptions(opts ...RPOption) *RPOptions {
@@ -74,5 +78,17 @@ func RPWithCtx(ctx context.Context) RPOption {
 func RPWithId(id string) RPOption {
 	return func(opt *RPOptions) {
 		opt.Id = id
+	}
+}
+
+func RPWithDumpInterval(interval string) RPOption {
+	return func(opt *RPOptions) {
+		opt.DumpInterval = interval
+	}
+}
+
+func RPWithScheduler(s gocron.Scheduler) RPOption {
+	return func(opt *RPOptions) {
+		opt.Scheduler = s
 	}
 }

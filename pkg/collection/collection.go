@@ -9,6 +9,7 @@ import (
 	"github.com/dovydasdo/clerk/config"
 	i "github.com/dovydasdo/clerk/pkg/ingestion"
 	m "github.com/dovydasdo/clerk/pkg/management"
+	"github.com/go-co-op/gocron/v2"
 	"github.com/spf13/viper"
 )
 
@@ -40,11 +41,17 @@ func GetCollection(ctx context.Context, cfg config.CollectionConfig, l *slog.Log
 				processors := make([]i.Processor, 0)
 				for _, procCfg := range manager.Processors {
 					sources := getSources(ctx, procCfg, l)
-					l.Debug("collection", "message", fmt.Sprintf("sources count: %v", len(sources)))
-					l.Debug("collection", "message", fmt.Sprintf("got sources: %v", sources))
 					stores := getStores(procCfg, l)
-					l.Debug("collection", "message", fmt.Sprintf("stores count: %v", len(stores)))
-					l.Debug("collection", "message", fmt.Sprintf("got stores: %v", stores))
+
+					var sch gocron.Scheduler
+					var err error
+					if procCfg.StateDump == "daily" || procCfg.StateDump == "weekly" {
+						sch, err = gocron.NewScheduler()
+						if err != nil {
+							l.Error("init", "error", err)
+						}
+					}
+
 					procOpts := i.GetRPOptions(
 						i.RPWithSource(sources...),
 						i.RPWithSaver(stores[0]), // only one for now
@@ -54,6 +61,8 @@ func GetCollection(ctx context.Context, cfg config.CollectionConfig, l *slog.Log
 						i.RPWithLogger(l),
 						i.RPWithCtx(context.Background()),
 						i.RPWithId(procCfg.Id),
+						i.RPWithDumpInterval(procCfg.StateDump),
+						i.RPWithScheduler(sch),
 					)
 					rp := i.GetRentProcessor(*procOpts)
 
@@ -153,7 +162,7 @@ func getStores(cfg config.Processor, l *slog.Logger) []i.Saver {
 	for _, saverCfg := range cfg.Stores {
 		saver := getStore(saverCfg, l)
 		if saver == nil {
-			l.Warn("collection", "message", fmt.Sprint("failed to init store with: %+v", saverCfg))
+			l.Warn("collection", "message", fmt.Sprintf("failed to init store with: %+v", saverCfg))
 		}
 		savers = append(savers, saver)
 	}
@@ -179,13 +188,14 @@ func getStore(cfg config.Store, l *slog.Logger) i.Saver {
 			return nil
 		}
 
+		// TODO: save functions based on data type
 		sOpts := i.GetTSOptions(
 			i.TSWithUrl(url),
 			i.TSWithToken(token),
 			i.TSWithLogger(l),
 			i.TSWithSaveFunc(i.SaveAd),
 			i.TSWithSaveFunc(i.SaveLocation),
-			i.TSWithSaveFunc(i.SaveState),
+			i.TSWithSaveFunc(i.SaveRentState),
 		)
 
 		saver, err = i.GetTursoSaver(sOpts)
