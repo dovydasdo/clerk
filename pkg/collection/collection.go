@@ -147,7 +147,8 @@ func getSource(ctx context.Context, cfg config.DataSource, l *slog.Logger) i.Ing
 		cOpts := i.GetNKVCacheOptions(
 			i.NKVCacheWithUrl(url),
 			i.NKVCacheWithCtx(ctx),
-			i.NKVCacheWithName(cfg.Stream),
+			i.NKVCacheWithName(cfg.Name),
+			i.NKVCacheWithSubject(cfg.Subject),
 		)
 
 		source = i.GetNatsKVSync(cOpts)

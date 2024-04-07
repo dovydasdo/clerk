@@ -139,10 +139,11 @@ func (p *RentProcessor) Start() error {
 				case "locations":
 					loc := location.Location{}
 					if err := proto.Unmarshal(msg.data, &loc); err == nil {
-						p.l.Debug("proc", "received", "location")
+						p.l.Debug("proc", "received", "location", "val", fmt.Sprintf("%+v", &loc))
 						// Sync locaiton data to db
 						err := p.store.Save(&loc)
 						if err != nil {
+							p.l.Error("proc", "error", err)
 							break
 						}
 
@@ -243,7 +244,10 @@ var SaveAd = func(db *sql.DB, data any, l *slog.Logger) error {
 var SaveLocation = func(db *sql.DB, data any, l *slog.Logger) error {
 	if loc, ok := data.(*location.Location); ok {
 		_, err := db.Exec(queries.SaveLocation, loc.Id, time.Now(), time.Now(), loc.Lat, loc.Lng)
-		return err
+		if err != nil {
+			return SaveError{Message: "got nil result from db exec", InnerErr: err}
+		}
+		return nil
 	}
 	return errors.New("failed to parse location")
 }
