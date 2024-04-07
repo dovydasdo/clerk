@@ -1,0 +1,15 @@
+version: '2.2'
+
+services:
+  clerk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clerk
+    env_file:
+      - .env
+    networks:
+      - psec-network
+networks:
+  psec-network:
+    external: true
