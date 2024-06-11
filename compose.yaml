@@ -8,8 +8,6 @@ services:
     image: clerk
     env_file:
       - .env
-    networks:
-      - psec-network
 networks:
   psec-network:
     external: true

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clerk-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clerk
+  template:
+    metadata:
+      labels:
+        app: clerk
+    spec:
+      containers:
+      - name: clerk
+        image: 192.168.1.222:5000/clerk:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        env:
+        - name: TURSO_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: turso-token-secret
+              key: turso-token
+        - name: TURSO_URL
+          value: libsql://psec-db-dev-dovydasdo.turso.io
+        - name: NATS_SERVER
+          value: 10.43.6.193:4222
