@@ -12,9 +12,9 @@ type RPOptions struct {
 	Sources       []Ingestor
 	Store         Saver
 	Logger        *slog.Logger
-	State         any
+	State         StateTracker
 	StateF        []RentStateFunc
-	StateInitFunc func(s any)
+	StateInitFunc func(s StateTracker) StateTracker
 	Ctx           context.Context
 	Id            string
 	DumpInterval  string
@@ -48,7 +48,7 @@ func RPWithLogger(l *slog.Logger) RPOption {
 	}
 }
 
-func RPWithState(s any) RPOption {
+func RPWithState(s StateTracker) RPOption {
 	return func(opt *RPOptions) {
 		opt.State = s
 	}
@@ -63,7 +63,7 @@ func RPWithStateF(sf RentStateFunc) RPOption {
 	}
 }
 
-func RPWithStateInitF(initf func(s any)) RPOption {
+func RPWithStateInitF(initf func(s StateTracker) StateTracker) RPOption {
 	return func(opt *RPOptions) {
 		opt.StateInitFunc = initf
 	}

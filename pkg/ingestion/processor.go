@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type RentStateFunc func(ad *pad.Ad, state any) error
+type RentStateFunc func(ad *pad.Ad, state StateTracker) error
 type Action func(data []byte) error
 
 type Processor interface {
@@ -24,6 +24,10 @@ type Processor interface {
 	Start() error
 	Dump() error
 	Stop() error
+}
+
+type StateTracker interface {
+	Reset()
 }
 
 type cityStats struct {
@@ -52,11 +56,11 @@ type RentProcessor struct {
 
 	// TODO: maybe allow any source to be registered?
 	sources []Ingestor
-	state   *RentState
+	State   StateTracker
 	store   Saver
 
 	stateFuncs    []RentStateFunc
-	initStateFunc func(state any)
+	initStateFunc func(state StateTracker) StateTracker
 
 	l *slog.Logger
 	s gocron.Scheduler
@@ -67,13 +71,13 @@ type RentProcessor struct {
 
 func GetRentProcessor(opts RPOptions) *RentProcessor {
 	// TODO: fix this, fails to cast to rent sate if is any
-	state, ok := opts.State.(*RentState)
-	if !ok {
-		state = &RentState{
-			statsCity:      map[string]*cityStats{},
-			totalProcessed: 0,
-		}
-	}
+	// state, ok := opts.State.(*RentState)
+	// if !ok {
+	// 	state = &RentState{
+	// 		statsCity:      map[string]*cityStats{},
+	// 		totalProcessed: 0,
+	// 	}
+	// }
 
 	return &RentProcessor{
 		store:         opts.Store,
@@ -82,7 +86,7 @@ func GetRentProcessor(opts RPOptions) *RentProcessor {
 		Ctx:           opts.Ctx,
 		initStateFunc: opts.StateInitFunc,
 		stateFuncs:    opts.StateF,
-		state:         state,
+		State:         opts.State,
 		sources:       opts.Sources,
 		dumpInterval:  opts.DumpInterval,
 		s:             opts.Scheduler,
@@ -98,7 +102,7 @@ func (p RentProcessor) Init() error {
 		}
 	}
 
-	p.initStateFunc(p.state)
+	p.State = p.initStateFunc(p.State)
 
 	return nil
 }
@@ -120,7 +124,7 @@ func (p *RentProcessor) Start() error {
 						p.l.Debug("proc", "received", "ad", "val", fmt.Sprintf("%v", &ad))
 						// update state with current ad
 						for _, stateF := range p.stateFuncs {
-							err := stateF(&ad, p.state)
+							err := stateF(&ad, p.State)
 							if err != nil {
 								break
 							}
@@ -214,13 +218,18 @@ func (p *RentProcessor) Stop() error {
 
 func (p RentProcessor) Dump() error {
 	// save state and reset it
-	err := p.store.Save(p.state)
+	err := p.store.Save(p.State)
 	if err != nil {
 		return err
 	}
 
-	p.initStateFunc(p.state)
+	p.State.Reset()
 	return nil
+}
+
+func (s *RentState) Reset() {
+	s.totalProcessed = 0
+	s.statsCity = map[string]*cityStats{}
 }
 
 var SaveAd = func(db *sql.DB, data any, l *slog.Logger) error {
