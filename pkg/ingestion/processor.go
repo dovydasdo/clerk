@@ -181,7 +181,7 @@ func (p *RentProcessor) Start() error {
 			switch p.dumpInterval {
 			case "daily":
 				// End of day dump
-				def = gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(14, 15, 59)))
+				def = gocron.DailyJob(1, gocron.NewAtTimes(gocron.NewAtTime(23, 59, 59)))
 			case "weekly":
 				// End of week dump
 				def = gocron.WeeklyJob(1, gocron.NewWeekdays(time.Sunday), gocron.NewAtTimes(gocron.NewAtTime(23, 59, 59)))
