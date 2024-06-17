@@ -41,7 +41,7 @@ func (i *MockIngestor) Start(sChan chan Message) error {
 			case <-i.ctx.Done():
 				break
 			default:
-				fmt.Printf("sending: %v \n", val)
+				// fmt.Printf("sending: %v \n", val)
 				if sChan == nil {
 					fmt.Printf("no chan \n")
 				}
@@ -76,8 +76,13 @@ var testIngestor *MockIngestor
 var testProc *RentProcessor
 
 type TestRentState struct {
-	average int
-	count   int
+	average        int
+	totalProcessed int
+}
+
+func (s *TestRentState) Reset() {
+	s.average = 0
+	s.totalProcessed = 0
 }
 
 func TestIngestion(t *testing.T) {
@@ -154,6 +159,7 @@ func TestIngestion(t *testing.T) {
 
 	received := 0
 	receivedLoc := 0
+	receivedState := 0
 	procOpts := GetRPOptions(
 		RPWithSource(testIngestor),
 		RPWithSource(testLocIngestor),
@@ -165,8 +171,8 @@ func TestIngestion(t *testing.T) {
 					}
 				}
 
-				if ad, ok := data.(*ad.Ad); ok {
-					logger.Debug("test", "message", "saving", "ad", fmt.Sprintf("%v", ad))
+				if _, ok := data.(*ad.Ad); ok {
+					// logger.Debug("test", "message", "saving", "ad", fmt.Sprintf("%v", ad))
 					received++
 				}
 
@@ -176,16 +182,22 @@ func TestIngestion(t *testing.T) {
 			},
 		}),
 		RPWithState(&TestRentState{}),
-		RPWithStateInitF(func(s any) {
-			s = &TestRentState{}
+		RPWithStateInitF(func(s StateTracker) StateTracker {
+			state, ok := s.(*TestRentState)
+			fmt.Sprintf("val: %+v", state)
+			if ok && state != nil {
+				receivedState += state.totalProcessed
+			}
+			return &TestRentState{}
+
 		}),
-		RPWithStateF(func(ad *ad.Ad, state any) error {
+		RPWithStateF(func(ad *ad.Ad, state StateTracker) error {
 			if state, ok := state.(*TestRentState); ok {
-				logger.Debug("test", "message", "processing state", "state", fmt.Sprintf("%v", state))
-				logger.Debug("test", "message", "processing state", "ad", fmt.Sprintf("%v", ad))
-				currSum := state.average * state.count
-				state.count++
-				state.average = (currSum + int(ad.Price)) / state.count
+				// logger.Debug("test", "message", "processing state", "state", fmt.Sprintf("%v", state))
+				// logger.Debug("test", "message", "processing state", "ad", fmt.Sprintf("%v", ad))
+				currSum := state.average * state.totalProcessed
+				state.totalProcessed++
+				state.average = (currSum + int(ad.Price)) / state.totalProcessed
 			}
 			return nil
 		}),
@@ -203,6 +215,11 @@ func TestIngestion(t *testing.T) {
 	time.Sleep(time.Second)
 
 	err = testProc.Dump()
+	if st, ok := testProc.State.(*TestRentState); ok {
+		if st.totalProcessed != 0 {
+			t.Errorf("should be empty after dumping, wanted total: %v, got: %v", 0, st.totalProcessed)
+		}
+	}
 	if err != nil {
 		t.Errorf("processor failed at dump: %v", err)
 	}

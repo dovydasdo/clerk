@@ -55,7 +55,7 @@ func GetCollection(ctx context.Context, cfg config.CollectionConfig, l *slog.Log
 					procOpts := i.GetRPOptions(
 						i.RPWithSource(sources...),
 						i.RPWithSaver(stores[0]), // only one for now
-						i.RPWithState(i.RentState{}),
+						i.RPWithState(&i.RentState{}),
 						i.RPWithStateInitF(i.InitSate),
 						i.RPWithStateF(i.UpdateRentState),
 						i.RPWithLogger(l),
