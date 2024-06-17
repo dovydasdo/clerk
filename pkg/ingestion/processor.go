@@ -289,14 +289,14 @@ var SaveRentState = func(db *sql.DB, state any, l *slog.Logger) error {
 	return errors.New("failed to parse rent state")
 }
 
-var InitSate = func(state any) {
-	state = &RentState{
+var InitSate = func(state StateTracker) StateTracker {
+	return &RentState{
 		statsCity:      make(map[string]*cityStats),
 		totalProcessed: 0,
 	}
 }
 
-var UpdateRentState = func(ad *pad.Ad, state any) error {
+var UpdateRentState = func(ad *pad.Ad, state StateTracker) error {
 	rState, ok := state.(*RentState)
 	if !ok {
 		return errors.New("failed to cast to rent state")
