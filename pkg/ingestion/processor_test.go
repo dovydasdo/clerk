@@ -182,13 +182,13 @@ func TestIngestion(t *testing.T) {
 			},
 		}),
 		RPWithState(&TestRentState{}),
-		RPWithStateInitF(func(s StateTracker) StateTracker {
+		RPWithStateInitF(func(s StateTracker) {
 			state, ok := s.(*TestRentState)
 			fmt.Sprintf("val: %+v", state)
 			if ok && state != nil {
 				receivedState += state.totalProcessed
 			}
-			return &TestRentState{}
+			s = &TestRentState{}
 
 		}),
 		RPWithStateF(func(ad *ad.Ad, state StateTracker) error {

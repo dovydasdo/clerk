@@ -60,7 +60,7 @@ type RentProcessor struct {
 	store   Saver
 
 	stateFuncs    []RentStateFunc
-	initStateFunc func(state StateTracker) StateTracker
+	initStateFunc func(state StateTracker)
 
 	l *slog.Logger
 	s gocron.Scheduler
@@ -102,7 +102,7 @@ func (p RentProcessor) Init() error {
 		}
 	}
 
-	p.State = p.initStateFunc(p.State)
+	p.initStateFunc(p.State)
 
 	return nil
 }
@@ -229,7 +229,7 @@ func (p RentProcessor) Dump() error {
 
 func (s *RentState) Reset() {
 	s.totalProcessed = 0
-	s.statsCity = map[string]*cityStats{}
+	s.statsCity = make(map[string]*cityStats)
 }
 
 var SaveAd = func(db *sql.DB, data any, l *slog.Logger) error {
@@ -289,8 +289,8 @@ var SaveRentState = func(db *sql.DB, state any, l *slog.Logger) error {
 	return errors.New("failed to parse rent state")
 }
 
-var InitSate = func(state StateTracker) StateTracker {
-	return &RentState{
+var InitSate = func(state StateTracker) {
+	state = &RentState{
 		statsCity:      make(map[string]*cityStats),
 		totalProcessed: 0,
 	}
@@ -320,6 +320,9 @@ var UpdateRentState = func(ad *pad.Ad, state StateTracker) error {
 			source:        ad.Source,
 		}
 
+		if rState.statsCity == nil {
+			rState.statsCity = make(map[string]*cityStats)
+		}
 		rState.statsCity[ad.City] = &cs
 		rState.totalProcessed++
 		return nil

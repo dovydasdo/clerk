@@ -49,7 +49,7 @@ func (c *NatsKVSync) Init() error {
 		return err
 	}
 	c.kv = kv
-	w, err := c.kv.Watch(c.ctx, c.subject)
+	w, err := c.kv.Watch(c.ctx, c.subject, jetstream.UpdatesOnly())
 	if err != nil {
 		return err
 	}
