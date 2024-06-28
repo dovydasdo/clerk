@@ -26,6 +26,6 @@ spec:
               name: turso-token-secret
               key: turso-token
         - name: TURSO_URL
-          value: libsql://psec-db-dev-dovydasdo.turso.io
+          value: libsql://psec-db-dovydasdo.turso.io
         - name: NATS_SERVER
           value: 10.43.6.193:4222
