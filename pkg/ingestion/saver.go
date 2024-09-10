@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
@@ -45,7 +46,7 @@ func GetTursoSaver(opts TSOptions) (*TursoSaver, error) {
 	var returnErr error
 	trsoOnce.Do(func() {
 		opts.Logger.Debug("turso", "message", fmt.Sprintf("opening db at: %v", fmt.Sprintf("%s", opts.Url)))
-		url := fmt.Sprintf("%s?authToken=%s", opts.Url, opts.Token)
+		url := fmt.Sprintf("%s?authToken=%s", opts.Url, strings.Replace(opts.Token, "\\\\n\\", "", -1))
 		db, err := sql.Open("libsql", url)
 		if err != nil {
 			returnErr = err
