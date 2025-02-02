@@ -28,4 +28,4 @@ spec:
         - name: TURSO_URL
           value: libsql://psec-db-dovydasdo.turso.io
         - name: NATS_SERVER
-          value: 10.43.6.193:4222
+          value: 10.42.0.208:4222
